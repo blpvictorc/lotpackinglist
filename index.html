@@ -1,0 +1,1731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BLPHK Packing List Formatter &amp; Exporter (V17)</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- SheetJS (xlsx-js-style) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+  <!-- html2canvas & jsPDF for Direct PDF Generation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #f1f5f9;
+    }
+    .mono-font {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+    .dark-scroll::-webkit-scrollbar-thumb { background: #475569; }
+    .dark-scroll::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+    /* Interactive Pan & Zoom Cursor States */
+    #previewViewport.can-pan { cursor: grab; }
+    #previewViewport.is-panning { cursor: grabbing !important; user-select: none; }
+
+    /* A4 Sheet Container */
+    .a4-page-sheet {
+      width: 210mm;
+      min-height: 297mm;
+      background: #ffffff;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.45), 0 8px 10px -6px rgba(0, 0, 0, 0.35);
+      padding: 4mm 5mm;
+      box-sizing: border-box;
+      position: relative;
+    }
+
+    .pl-grid-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      color: #000000;
+    }
+    .pl-grid-table td {
+      padding: 0.5px 1.5px;
+      overflow: visible;
+      word-break: break-word;
+      white-space: pre-wrap;
+      line-height: 1.18;
+      box-sizing: border-box;
+    }
+    .pl-grid-table tr:hover td {
+      background-color: rgba(59, 130, 246, 0.05);
+    }
+  </style>
+</head>
+<body class="text-slate-800 h-screen flex flex-col overflow-hidden select-none">
+
+  <!-- Unified Dark Slate Header -->
+  <header class="bg-slate-950 text-white shadow-lg px-5 py-2.5 flex flex-wrap justify-between items-center gap-3 z-30 border-b border-slate-800 shrink-0">
+    <div class="flex items-center space-x-3">
+      <div class="bg-gradient-to-br from-blue-500 to-indigo-600 p-2 rounded-xl shadow-md shadow-blue-950/50 border border-blue-400/20">
+        <i class="fa-solid fa-file-excel text-lg text-white"></i>
+      </div>
+      <div>
+        <h1 class="text-base font-extrabold tracking-tight flex items-center gap-2">
+          BLPHK Packing List Formatter
+          <span class="bg-blue-500/20 text-blue-300 text-[11px] font-bold px-2 py-0.5 rounded-full border border-blue-400/30 mono-font">Based on VBA v5.4</span>
+        </h1>
+        <div class="flex flex-wrap items-center gap-1.5 mt-0.5 text-[10px] text-slate-400 font-medium">
+          <span class="bg-slate-900 border border-slate-800 px-1.5 py-0.2 rounded text-slate-300">G.W. &amp; N.W. Headers Blank</span>
+          <span>•</span>
+          <span class="bg-slate-900 border border-slate-800 px-1.5 py-0.2 rounded text-slate-300">Remarks Total GW + (Including Sample)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Center File Switcher -->
+    <div class="flex flex-wrap items-center gap-2 bg-slate-900 p-1.5 rounded-xl border border-slate-800 shadow-inner">
+      <div class="flex items-center gap-1.5 px-2">
+        <i class="fa-solid fa-layer-group text-blue-400 text-xs"></i>
+        <select id="batchFileSelect" disabled class="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-[210px]">
+          <option value="">No Excel files loaded</option>
+        </select>
+      </div>
+
+      <div class="h-4 w-[1px] bg-slate-700 hidden sm:block"></div>
+
+      <button id="reapplyAutoBtn" disabled class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none border border-slate-700 rounded-lg text-xs font-semibold text-slate-200 flex items-center gap-1.5 transition cursor-pointer" title="Reset manual tweaks and re-run automation rules">
+        <i class="fa-solid fa-wand-magic-sparkles text-amber-400 text-[11px]"></i>
+        <span>Reset to Auto</span>
+      </button>
+    </div>
+
+    <!-- Right Action Buttons -->
+    <div class="flex flex-wrap items-center gap-2">
+      <button id="uploadHeaderBtn" class="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-bold rounded-lg shadow-sm flex items-center space-x-1.5 transition cursor-pointer">
+        <i class="fa-solid fa-folder-open text-amber-300"></i>
+        <span>Select Excel(s)</span>
+      </button>
+
+      <button id="downloadOriginalBtn" disabled class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none border border-slate-700 text-slate-200 text-xs font-bold rounded-lg shadow-sm flex items-center space-x-1.5 transition cursor-pointer" title="Download backup copy of original file">
+        <i class="fa-solid fa-clock-rotate-left text-slate-300"></i>
+        <span>Original Backup</span>
+      </button>
+
+      <button id="exportBothBtn" disabled class="px-4 py-1.5 bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-500 hover:to-blue-500 disabled:opacity-40 disabled:pointer-events-none text-white text-xs font-extrabold rounded-lg shadow-md shadow-blue-950/40 flex items-center space-x-2 transition cursor-pointer" title="Download both edited Excel (.xlsx) and PDF (.pdf) in one click">
+        <i class="fa-solid fa-download"></i>
+        <span>Export Excel + PDF</span>
+      </button>
+
+      <button id="exportBatchBtn" disabled class="hidden px-3 py-1.5 bg-teal-700 hover:bg-teal-600 disabled:opacity-40 disabled:pointer-events-none text-white text-xs font-bold rounded-lg shadow-md shadow-teal-950/40 flex items-center space-x-1.5 transition cursor-pointer">
+        <i class="fa-solid fa-boxes-stacked"></i>
+        <span>Export All (<span id="batchCountBtn">0</span>)</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <main id="mainWorkspace" class="flex-1 flex flex-col overflow-hidden">
+
+    <!-- Top KPI & Status Telemetry Strip -->
+    <div id="kpiStrip" class="bg-white border-b border-slate-200 px-5 py-2 grid grid-cols-2 md:grid-cols-6 gap-2.5 shrink-0">
+      <div class="bg-slate-50 rounded-lg px-3 py-1.5 border border-slate-200/80 flex flex-col justify-center col-span-2 md:col-span-2">
+        <div class="flex items-center justify-between">
+          <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Processor Status</span>
+          <span id="sampleBadge" class="hidden text-[10px] font-bold px-2 py-0.5 rounded-full mono-font"></span>
+        </div>
+        <div class="flex items-center justify-between gap-2 mt-0.5">
+          <span id="statusText" class="text-xs font-bold text-slate-700 truncate">Ready — Drop Packing List Excel file(s) (.xls / .xlsx) below</span>
+        </div>
+      </div>
+
+      <div class="bg-blue-50/70 rounded-lg p-1.5 border border-blue-200/80 flex flex-col justify-center text-center">
+        <div class="text-[10px] font-bold uppercase tracking-wider text-blue-600">Cleared Item Rows</div>
+        <div id="kpiClearCount" class="text-sm font-extrabold text-blue-700 mono-font">0</div>
+      </div>
+
+      <div class="bg-indigo-50/70 rounded-lg p-1.5 border border-indigo-200/80 flex flex-col justify-center text-center">
+        <div class="text-[10px] font-bold uppercase tracking-wider text-indigo-600">Cleared GW/NW Cells</div>
+        <div id="kpiClearedHeaderCells" class="text-sm font-extrabold text-indigo-700 mono-font">0</div>
+      </div>
+
+      <div class="bg-violet-50/70 rounded-lg p-1.5 border border-violet-200/80 flex flex-col justify-center text-center">
+        <div class="text-[10px] font-bold uppercase tracking-wider text-violet-700">Strict Page Breaks</div>
+        <div id="kpiBreakCount" class="text-sm font-extrabold text-violet-700 mono-font">0</div>
+      </div>
+
+      <div class="bg-emerald-50/70 rounded-lg p-1.5 border border-emerald-200/80 flex flex-col justify-center text-center">
+        <div class="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Extracted Total GW</div>
+        <div id="kpiTotalGw" class="text-sm font-extrabold text-emerald-700 mono-font truncate">-</div>
+      </div>
+    </div>
+
+    <!-- Workspace Body -->
+    <div class="flex-1 flex flex-col overflow-hidden p-3 gap-2.5">
+
+      <!-- Compact Drag & Drop Banner -->
+      <div id="dropZoneBar" class="bg-white hover:bg-blue-50/60 border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-xl px-4 py-2 flex items-center justify-between cursor-pointer transition-all shrink-0 shadow-2xs group">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-blue-50 group-hover:bg-blue-600 text-blue-600 group-hover:text-white flex items-center justify-center transition-colors">
+            <i class="fa-solid fa-cloud-arrow-up text-sm"></i>
+          </div>
+          <div>
+            <div class="text-xs font-bold text-slate-800 group-hover:text-blue-700 transition-colors">
+              Click to browse or drag &amp; drop Excel file(s) here (Multi-select supported)
+            </div>
+            <div class="text-[11px] text-slate-400">
+              Clears G.W. &amp; N.W. headers on every page • Appends Total GW + (Including Sample) in Remarks • One-click export of Excel + PDF
+            </div>
+          </div>
+        </div>
+        <span id="activeFileLabel" class="hidden sm:inline-block text-[11px] font-semibold bg-slate-100 text-slate-600 border border-slate-200 px-2.5 py-1 rounded-lg mono-font">
+          No file loaded
+        </span>
+        <input type="file" id="fileInput" accept=".xls,.xlsx,.xlsm,.xlsb" multiple class="hidden" />
+      </div>
+
+      <!-- Dual-Pane Split View -->
+      <div id="splitGrid" class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 overflow-hidden">
+
+        <!-- Left Panel (5 cols): Fine-Tuning Studio -->
+        <div id="controlSidebar" class="lg:col-span-5 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
+          <div class="bg-slate-50 border-b border-slate-200 px-4 py-2 flex items-center justify-between shrink-0">
+            <span class="text-xs font-bold text-slate-700 flex items-center gap-2">
+              <i class="fa-solid fa-sliders text-blue-600"></i>
+              Formatting Fine-Tuning Studio
+            </span>
+            <span class="text-[10px] font-semibold text-slate-400 mono-font">Live Sync to Preview &amp; Export</span>
+          </div>
+
+          <div id="emptyControlsPlaceholder" class="flex-1 flex flex-col items-center justify-center p-6 text-center text-slate-400">
+            <i class="fa-solid fa-table-list text-3xl text-slate-300 mb-2"></i>
+            <p class="text-xs font-bold text-slate-600">Awaiting Packing List Workbook</p>
+            <p class="text-[11px] mt-1 max-w-xs">Upload an Excel file like <span class="mono-font text-slate-500">LOT PL.xls</span> to auto-format and fine-tune before exporting Excel + PDF.</p>
+          </div>
+
+          <div id="controlsContent" class="hidden flex-1 overflow-y-auto p-3.5 space-y-3.5 select-text">
+
+            <!-- Section 1: Sample Detection & Total GW in Remarks (Column J) -->
+            <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2.5">
+              <div class="flex items-center justify-between">
+                <span class="text-[11px] font-extrabold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                  <i class="fa-solid fa-comment-dots text-emerald-600"></i>
+                  1. Remarks Total GW &amp; Sample Suffix
+                </span>
+                <label class="flex items-center gap-1.5 text-[11px] font-bold text-slate-700 cursor-pointer">
+                  <input type="checkbox" id="chkSampleDetected" class="accent-emerald-600 rounded cursor-pointer">
+                  <span>Include "(Including Sample)"</span>
+                </label>
+              </div>
+
+              <div class="grid grid-cols-3 gap-2">
+                <div>
+                  <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Total GW (AZ)</label>
+                  <input type="text" id="inputTotalGw" class="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold mono-font text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                </div>
+                <div>
+                  <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Spaces Before</label>
+                  <input type="number" id="inputSpaceCount" min="0" max="120" value="40" class="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold mono-font text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                </div>
+                <div>
+                  <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Remarks Row</label>
+                  <div id="lblRemarksRow" class="w-full px-2.5 py-1.5 bg-emerald-100/80 border border-emerald-200 rounded-lg text-xs font-bold mono-font text-emerald-800 text-center">Row -</div>
+                </div>
+              </div>
+
+              <div>
+                <div class="flex items-center justify-between mb-1">
+                  <label class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Column J (Remarks) Content</label>
+                  <button type="button" id="btnRebuildRemarks" class="text-[10px] font-bold text-blue-600 hover:underline cursor-pointer">Rebuild from Total GW</button>
+                </div>
+                <textarea id="textareaRemarksJ" rows="3" class="w-full p-2 bg-white border border-slate-300 rounded-lg text-[11px] mono-font text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 whitespace-pre"></textarea>
+              </div>
+
+              <div class="flex items-center justify-between text-[10px] text-slate-500 pt-0.5 border-t border-slate-200/80">
+                <span>Page Header G.W./N.W.: <b class="text-emerald-700">Cleared (Blank)</b></span>
+                <span>Cleared Item Rows: <b id="lblClearedRows" class="text-slate-700 mono-font">0</b></span>
+              </div>
+            </div>
+
+            <!-- Section 2: Strict Page Break Manager -->
+            <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2.5">
+              <div class="flex items-center justify-between">
+                <span class="text-[11px] font-extrabold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                  <i class="fa-solid fa-scissors text-violet-600"></i>
+                  2. Strict Page Breaks (Before Row)
+                </span>
+                <span id="lblTotalPages" class="text-[10px] font-bold px-2 py-0.5 rounded bg-violet-100 text-violet-800 mono-font">1 Page</span>
+              </div>
+
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="inputNewBreakRow" min="2" placeholder="Row # (e.g. 56)" class="flex-1 px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs mono-font font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-500" />
+                <button type="button" id="btnAddBreak" class="px-3 py-1.5 bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold rounded-lg transition cursor-pointer">
+                  <i class="fa-solid fa-plus mr-1"></i>Add Break
+                </button>
+              </div>
+
+              <div id="pageBreaksList" class="max-h-40 overflow-y-auto space-y-1 pr-1">
+                <!-- Dynamic page break chips -->
+              </div>
+            </div>
+
+            <!-- Section 3: V27 Anti-Cutoff Row Padding & Display -->
+            <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2.5">
+              <span class="text-[11px] font-extrabold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                <i class="fa-solid fa-up-down text-amber-600"></i>
+                3. V27 Anti-Cutoff Row Padding &amp; Display
+              </span>
+
+              <div class="grid grid-cols-3 gap-2">
+                <div>
+                  <label class="block text-[9px] font-bold uppercase text-slate-500 mb-0.5">Main Item +pt</label>
+                  <input type="number" id="inputPadMain" value="5" min="0" max="25" class="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs mono-font font-bold" />
+                </div>
+                <div>
+                  <label class="block text-[9px] font-bold uppercase text-slate-500 mb-0.5">Remarks +pt</label>
+                  <input type="number" id="inputPadRemarks" value="8" min="0" max="25" class="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs mono-font font-bold" />
+                </div>
+                <div>
+                  <label class="block text-[9px] font-bold uppercase text-slate-500 mb-0.5">Font Scale %</label>
+                  <input type="number" id="inputFontScale" value="82" min="60" max="115" class="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs mono-font font-bold" />
+                </div>
+              </div>
+
+              <div class="flex items-center justify-between pt-1">
+                <label class="flex items-center gap-1.5 text-[11px] font-semibold text-slate-700 cursor-pointer">
+                  <input type="checkbox" id="chkShowRowNumbers" class="accent-blue-600 rounded cursor-pointer">
+                  <span>Show Row # Gutter in Preview</span>
+                </label>
+                <button type="button" id="btnApplyLayout" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-bold rounded-lg cursor-pointer">
+                  Apply Layout
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Right Panel (7 cols): Interactive Paginated Preview -->
+        <div id="previewPanel" class="lg:col-span-7 bg-slate-950 rounded-2xl border border-slate-300 shadow-inner flex flex-col overflow-hidden">
+          <div id="previewToolbar" class="bg-slate-900 border-b border-slate-800 px-4 py-2 flex flex-wrap items-center justify-between gap-2 shrink-0">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-bold text-slate-200 flex items-center gap-2">
+                <i class="fa-regular fa-file-lines text-emerald-400"></i>
+                Packing List Preview (All Rows Visible)
+              </span>
+              <span class="hidden sm:inline text-[10px] bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded-full">
+                Click any cell to edit • Click row # to toggle break
+              </span>
+            </div>
+
+            <!-- Zoom Controls -->
+            <div class="flex items-center gap-1.5">
+              <div class="flex items-center bg-slate-950 border border-slate-700 rounded-lg p-0.5">
+                <button type="button" id="zoomOutBtn" disabled class="w-6 h-6 rounded text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-35 disabled:pointer-events-none flex items-center justify-center transition cursor-pointer" title="Zoom Out">
+                  <i class="fa-solid fa-minus text-[10px]"></i>
+                </button>
+                <span id="zoomLabel" class="px-2 text-[10px] font-bold text-slate-200 mono-font min-w-[46px] text-center">90%</span>
+                <button type="button" id="zoomInBtn" disabled class="w-6 h-6 rounded text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-35 disabled:pointer-events-none flex items-center justify-center transition cursor-pointer" title="Zoom In">
+                  <i class="fa-solid fa-plus text-[10px]"></i>
+                </button>
+              </div>
+              <button type="button" id="zoomFitBtn" disabled class="px-2 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] font-bold text-slate-200 disabled:opacity-35 disabled:pointer-events-none transition cursor-pointer">
+                Fit
+              </button>
+            </div>
+          </div>
+
+          <!-- Paginated Canvas Viewport -->
+          <div id="previewViewport" class="flex-1 overflow-auto dark-scroll p-5 flex flex-col items-center gap-6 bg-slate-900/70">
+            <div class="w-full h-full flex flex-col items-center justify-center text-slate-500 text-xs gap-2 py-12">
+              <i class="fa-solid fa-print text-2xl text-slate-600"></i>
+              <span>Formatted Packing List pages will render here with every row intact</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+
+  <!-- Inline Cell Edit Modal -->
+  <div id="cellEditModal" class="hidden fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-[1px] flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden">
+      <div class="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
+        <div class="text-xs font-bold flex items-center gap-2">
+          <i class="fa-solid fa-pen-to-square text-blue-400"></i>
+          <span>Edit Cell <span id="modalCellCoord" class="mono-font text-amber-300">A1</span></span>
+        </div>
+        <button type="button" id="btnCloseCellModal" class="text-slate-400 hover:text-white cursor-pointer">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <div class="p-4 space-y-3">
+        <textarea id="modalCellInput" rows="4" class="w-full p-2.5 border border-slate-300 rounded-xl text-xs mono-font text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 whitespace-pre"></textarea>
+        <div class="flex items-center justify-between">
+          <button type="button" id="btnInsertBreakHere" class="px-2.5 py-1.5 bg-violet-50 hover:bg-violet-100 border border-violet-200 text-violet-700 text-[11px] font-bold rounded-lg cursor-pointer">
+            <i class="fa-solid fa-scissors mr-1"></i>Toggle Page Break Before Row
+          </button>
+          <div class="flex items-center gap-2">
+            <button type="button" id="btnCancelCellModal" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg cursor-pointer">Cancel</button>
+            <button type="button" id="btnSaveCellModal" class="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg cursor-pointer">Save Cell</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // =========================================================================
+    // GLOBAL APPLICATION STATE
+    // =========================================================================
+    const appState = {
+      files: [],
+      activeIndex: -1,
+      zoomLevel: 0.90,
+      showRowGutter: false,
+      editingTarget: null,
+      isExporting: false
+    };
+
+    function colToIndex(colStr) {
+      let idx = 0;
+      const s = colStr.toUpperCase();
+      for (let i = 0; i < s.length; i++) {
+        idx = idx * 26 + (s.charCodeAt(i) - 64);
+      }
+      return idx - 1;
+    }
+
+    function indexToCol(idx) {
+      let col = '';
+      let n = idx + 1;
+      while (n > 0) {
+        const rem = (n - 1) % 26;
+        col = String.fromCharCode(65 + rem) + col;
+        n = Math.floor((n - 1) / 26);
+      }
+      return col;
+    }
+
+    const COL_B = colToIndex('B');   // 1
+    const COL_C = colToIndex('C');   // 2
+    const COL_J = colToIndex('J');   // 9
+    const COL_AX = colToIndex('AX'); // 49
+    const COL_AZ = colToIndex('AZ'); // 51
+    const COL_BB = colToIndex('BB'); // 53
+    const COL_BD = colToIndex('BD'); // 55
+    const COL_BF = colToIndex('BF'); // 57
+
+    // =========================================================================
+    // BIFF8 (.xls) BINARY STYLE & GEOMETRY EXTRACTOR
+    // =========================================================================
+    function extractBiff8Formatting(arrayBuffer) {
+      const bytes = new Uint8Array(arrayBuffer);
+      if (bytes.length < 512 || bytes[0] !== 0xD0 || bytes[1] !== 0xCF || bytes[2] !== 0x11 || bytes[3] !== 0xE0) {
+        return null;
+      }
+
+      const view = new DataView(arrayBuffer);
+      const sectorSize = 1 << view.getUint16(30, true);
+      const fatSectors = view.getUint32(44, true);
+      const firstDirSector = view.getUint32(48, true);
+      const miniStreamCutoff = view.getUint32(56, true);
+      const firstMiniFatSector = view.getUint32(60, true);
+      const firstDifatSector = view.getUint32(68, true);
+
+      const getSectorOffset = (secId) => (secId + 1) * sectorSize;
+
+      const difat = [];
+      for (let i = 0; i < 109 && difat.length < fatSectors; i++) {
+        const sec = view.getUint32(76 + i * 4, true);
+        if (sec < 0xFFFFFFFC) difat.push(sec);
+      }
+      let nextDifat = firstDifatSector;
+      while (nextDifat < 0xFFFFFFFC && difat.length < fatSectors) {
+        const off = getSectorOffset(nextDifat);
+        const entriesPerSec = (sectorSize / 4) - 1;
+        for (let i = 0; i < entriesPerSec && difat.length < fatSectors; i++) {
+          const sec = view.getUint32(off + i * 4, true);
+          if (sec < 0xFFFFFFFC) difat.push(sec);
+        }
+        nextDifat = view.getUint32(off + entriesPerSec * 4, true);
+      }
+
+      const fat = [];
+      for (const fatSec of difat) {
+        const off = getSectorOffset(fatSec);
+        for (let i = 0; i < sectorSize / 4; i++) {
+          fat.push(view.getUint32(off + i * 4, true));
+        }
+      }
+
+      const readStream = (startSec, sizeLimit = Infinity) => {
+        const chunks = [];
+        let sec = startSec;
+        let total = 0;
+        const visited = new Set();
+        while (sec < 0xFFFFFFFC && total < sizeLimit && !visited.has(sec)) {
+          visited.add(sec);
+          const off = getSectorOffset(sec);
+          const take = Math.min(sectorSize, sizeLimit - total);
+          chunks.push(bytes.subarray(off, off + take));
+          total += take;
+          sec = fat[sec];
+        }
+        const out = new Uint8Array(total);
+        let pos = 0;
+        for (const c of chunks) {
+          out.set(c, pos);
+          pos += c.length;
+        }
+        return out;
+      };
+
+      const dirBytes = readStream(firstDirSector);
+      const dirView = new DataView(dirBytes.buffer, dirBytes.byteOffset, dirBytes.byteLength);
+      let rootStartSec = 0xFFFFFFFE;
+      let rootSize = 0;
+      let wbStartSec = 0xFFFFFFFE;
+      let wbSize = 0;
+
+      for (let off = 0; off + 128 <= dirBytes.length; off += 128) {
+        const nameLen = dirView.getUint16(off + 64, true);
+        if (nameLen < 2 || nameLen > 64) continue;
+        let name = '';
+        for (let i = 0; i < nameLen - 2; i += 2) {
+          name += String.fromCharCode(dirView.getUint16(off + i, true));
+        }
+        const entryType = dirBytes[off + 66];
+        const startSec = dirView.getUint32(off + 116, true);
+        const size = dirView.getUint32(off + 120, true);
+        if (entryType === 5) {
+          rootStartSec = startSec;
+          rootSize = size;
+        } else if (name === 'Workbook' || name === 'Book') {
+          wbStartSec = startSec;
+          wbSize = size;
+        }
+      }
+
+      if (wbStartSec >= 0xFFFFFFFC || wbSize === 0) return null;
+
+      let wbBytes;
+      if (wbSize < miniStreamCutoff && rootStartSec < 0xFFFFFFFC) {
+        const miniStream = readStream(rootStartSec, rootSize);
+        const miniFatBytes = readStream(firstMiniFatSector);
+        const miniFatView = new DataView(miniFatBytes.buffer, miniFatBytes.byteOffset, miniFatBytes.byteLength);
+        const miniFat = [];
+        for (let i = 0; i < miniFatBytes.length / 4; i++) miniFat.push(miniFatView.getUint32(i * 4, true));
+
+        wbBytes = new Uint8Array(wbSize);
+        let mSec = wbStartSec;
+        let written = 0;
+        while (mSec < 0xFFFFFFFC && written < wbSize) {
+          const take = Math.min(64, wbSize - written);
+          wbBytes.set(miniStream.subarray(mSec * 64, mSec * 64 + take), written);
+          written += take;
+          mSec = miniFat[mSec];
+        }
+      } else {
+        wbBytes = readStream(wbStartSec, wbSize);
+      }
+
+      const wbView = new DataView(wbBytes.buffer, wbBytes.byteOffset, wbBytes.byteLength);
+      const fonts = [];
+      const xfs = [];
+      const colWidthsChars = {};
+      const rowHeightsPt = {};
+      const cellXfMap = new Map();
+
+      const borderStyleMap = {
+        0: 'none', 1: 'thin', 2: 'medium', 3: 'dashed', 4: 'dotted',
+        5: 'thick', 6: 'double', 7: 'hair', 8: 'mediumDashed'
+      };
+      const hAlignMap = { 0: 'general', 1: 'left', 2: 'center', 3: 'right', 4: 'fill', 5: 'justify', 6: 'center' };
+      const vAlignMap = { 0: 'top', 1: 'center', 2: 'bottom', 3: 'justify' };
+
+      let pos = 0;
+      let bofCount = 0;
+      let inFirstSheet = false;
+
+      while (pos + 4 <= wbBytes.length) {
+        const recId = wbView.getUint16(pos, true);
+        const recLen = wbView.getUint16(pos + 2, true);
+        const dataPos = pos + 4;
+        if (dataPos + recLen > wbBytes.length) break;
+
+        if (recId === 0x0809) {
+          bofCount++;
+          inFirstSheet = (bofCount === 2);
+        } else if (recId === 0x000A) {
+          if (inFirstSheet) break;
+        } else if (recId === 0x0031 && recLen >= 16) {
+          const heightTwips = wbView.getUint16(dataPos, true);
+          const grbit = wbView.getUint16(dataPos + 2, true);
+          const weight = wbView.getUint16(dataPos + 6, true);
+          const nameLen = wbBytes[dataPos + 14];
+          const flags = wbBytes[dataPos + 15];
+          let fontName = 'Arial';
+          if (flags & 0x01) {
+            let s = '';
+            for (let i = 0; i < nameLen && dataPos + 16 + i * 2 + 1 < dataPos + recLen; i++) {
+              s += String.fromCharCode(wbView.getUint16(dataPos + 16 + i * 2, true));
+            }
+            if (s) fontName = s;
+          } else {
+            let s = '';
+            for (let i = 0; i < nameLen && dataPos + 16 + i < dataPos + recLen; i++) {
+              s += String.fromCharCode(wbBytes[dataPos + 16 + i]);
+            }
+            if (s) fontName = s;
+          }
+          if (fonts.length === 4) fonts.push({ name: 'Arial', sz: 10, bold: false, italic: false });
+          fonts.push({
+            name: fontName,
+            sz: heightTwips / 20,
+            bold: weight >= 700,
+            italic: Boolean(grbit & 0x0002)
+          });
+        } else if (recId === 0x00E0 && recLen >= 20) {
+          const fontIdx = wbView.getUint16(dataPos, true);
+          const alignByte = wbBytes[dataPos + 6];
+          const hAlign = alignByte & 0x07;
+          const wrapText = Boolean(alignByte & 0x08);
+          const vAlign = (alignByte >> 4) & 0x07;
+          const border1 = wbView.getUint16(dataPos + 10, true);
+          const leftStyle = border1 & 0x000F;
+          const rightStyle = (border1 >> 4) & 0x000F;
+          const topStyle = (border1 >> 8) & 0x000F;
+          const bottomStyle = (border1 >> 12) & 0x000F;
+
+          xfs.push({
+            fontIdx,
+            hAlign: hAlignMap[hAlign] || 'general',
+            vAlign: vAlignMap[vAlign] || 'center',
+            wrapText,
+            border: {
+              left: { style: borderStyleMap[leftStyle] || 'none' },
+              right: { style: borderStyleMap[rightStyle] || 'none' },
+              top: { style: borderStyleMap[topStyle] || 'none' },
+              bottom: { style: borderStyleMap[bottomStyle] || 'none' }
+            }
+          });
+        } else if (inFirstSheet) {
+          if (recId === 0x007D && recLen >= 10) {
+            const colFirst = wbView.getUint16(dataPos, true);
+            const colLast = wbView.getUint16(dataPos + 2, true);
+            const colDx = wbView.getUint16(dataPos + 4, true);
+            const wch = colDx / 256;
+            for (let c = colFirst; c <= colLast; c++) colWidthsChars[c] = wch;
+          } else if (recId === 0x0208 && recLen >= 16) {
+            const r = wbView.getUint16(dataPos, true);
+            const miyRw = wbView.getUint16(dataPos + 6, true);
+            rowHeightsPt[r] = (miyRw & 0x7FFF) / 20;
+          } else if (
+            (recId === 0x0201 || recId === 0x0203 || recId === 0x0204 || recId === 0x0205 || recId === 0x00FD || recId === 0x027E || recId === 0x0006) &&
+            recLen >= 6
+          ) {
+            const r = wbView.getUint16(dataPos, true);
+            const c = wbView.getUint16(dataPos + 2, true);
+            const xfIdx = wbView.getUint16(dataPos + 4, true);
+            cellXfMap.set(`${r},${c}`, xfIdx);
+          } else if (recId === 0x00BE && recLen >= 6) {
+            const r = wbView.getUint16(dataPos, true);
+            const colFirst = wbView.getUint16(dataPos + 2, true);
+            const count = (recLen - 6) / 2;
+            for (let i = 0; i < count; i++) {
+              const xfIdx = wbView.getUint16(dataPos + 4 + i * 2, true);
+              cellXfMap.set(`${r},${colFirst + i}`, xfIdx);
+            }
+          } else if (recId === 0x00BD && recLen >= 6) {
+            const r = wbView.getUint16(dataPos, true);
+            const colFirst = wbView.getUint16(dataPos + 2, true);
+            const count = (recLen - 6) / 6;
+            for (let i = 0; i < count; i++) {
+              const xfIdx = wbView.getUint16(dataPos + 4 + i * 6, true);
+              cellXfMap.set(`${r},${colFirst + i}`, xfIdx);
+            }
+          }
+        }
+        pos += 4 + recLen;
+      }
+
+      return { fonts, xfs, colWidthsChars, rowHeightsPt, cellXfMap };
+    }
+
+    // =========================================================================
+    // FULL AUTOMATION ENGINE (Restores V13 Page Breaks + V15 BIFF8 Styles + New Logic)
+    // =========================================================================
+    function parseAndAutomateWorkbook(fileName, arrayBuffer) {
+      const originalBuffer = arrayBuffer.slice(0);
+      const biff8Info = extractBiff8Formatting(originalBuffer);
+
+      const wb = XLSX.read(arrayBuffer, {
+        type: 'array',
+        cellStyles: true,
+        cellNF: true,
+        cellHTML: false
+      });
+
+      const firstSheetName = wb.SheetNames[0];
+      const ws = wb.Sheets[firstSheetName];
+      const ref = ws['!ref'] || 'A1:BK100';
+      const range = XLSX.utils.decode_range(ref);
+
+      const maxRow = Math.max(range.e.r, 10);
+      const maxCol = Math.max(range.e.c, COL_BF);
+
+      const grid = [];
+      for (let r = 0; r <= maxRow; r++) {
+        const rowArr = [];
+        for (let c = 0; c <= maxCol; c++) {
+          const addr = XLSX.utils.encode_cell({ r, c });
+          const rawCell = ws[addr];
+          let styleObj = rawCell && rawCell.s ? JSON.parse(JSON.stringify(rawCell.s)) : {};
+
+          if (biff8Info) {
+            const xfIdx = biff8Info.cellXfMap.get(`${r},${c}`);
+            const xf = xfIdx !== undefined ? biff8Info.xfs[xfIdx] : null;
+            if (xf) {
+              const fnt = biff8Info.fonts[xf.fontIdx] || { name: 'Arial', sz: 8.5, bold: false, italic: false };
+              styleObj.font = {
+                name: fnt.name,
+                sz: fnt.sz,
+                bold: fnt.bold,
+                italic: fnt.italic
+              };
+              styleObj.alignment = {
+                horizontal: xf.hAlign !== 'general' ? xf.hAlign : (rawCell?.t === 'n' ? 'right' : 'left'),
+                vertical: xf.vAlign || 'center',
+                wrapText: xf.wrapText
+              };
+              styleObj.border = xf.border;
+            }
+          }
+
+          rowArr.push({
+            v: rawCell && rawCell.v !== undefined ? rawCell.v : '',
+            w: rawCell && rawCell.w !== undefined ? rawCell.w : (rawCell && rawCell.v !== undefined ? String(rawCell.v) : ''),
+            t: rawCell ? rawCell.t : 's',
+            s: styleObj
+          });
+        }
+        grid.push(rowArr);
+      }
+
+      const merges = (ws['!merges'] || []).map(m => ({
+        s: { r: m.s.r, c: m.s.c },
+        e: { r: m.e.r, c: m.e.c }
+      }));
+
+      const colWidths = [];
+      const wsCols = ws['!cols'] || [];
+      for (let c = 0; c <= maxCol; c++) {
+        if (biff8Info && biff8Info.colWidthsChars[c] !== undefined) {
+          colWidths.push(Math.max(4, biff8Info.colWidthsChars[c] * 7.0));
+        } else {
+          const colInfo = wsCols[c];
+          if (colInfo && colInfo.wpx) colWidths.push(colInfo.wpx);
+          else if (colInfo && colInfo.wch) colWidths.push(Math.max(6, colInfo.wch * 7.0));
+          else colWidths.push(14);
+        }
+      }
+
+      const baseRowHeights = [];
+      const wsRows = ws['!rows'] || [];
+      for (let r = 0; r <= maxRow; r++) {
+        if (biff8Info && biff8Info.rowHeightsPt[r] !== undefined) {
+          baseRowHeights.push(biff8Info.rowHeightsPt[r]);
+        } else {
+          const rowInfo = wsRows[r];
+          baseRowHeights.push(rowInfo && rowInfo.hpt ? rowInfo.hpt : 13.5);
+        }
+      }
+
+      const findMerge = (r, c) => merges.find(m => r >= m.s.r && r <= m.e.r && c >= m.s.c && c <= m.e.c);
+
+      const clearCellOrMerge = (r, c) => {
+        const m = findMerge(r, c);
+        if (m) {
+          for (let rr = m.s.r; rr <= m.e.r; rr++) {
+            for (let cc = m.s.c; cc <= m.e.c; cc++) {
+              if (grid[rr] && grid[rr][cc]) {
+                grid[rr][cc].v = '';
+                grid[rr][cc].w = '';
+              }
+            }
+          }
+        } else if (grid[r] && grid[r][c]) {
+          grid[r][c].v = '';
+          grid[r][c].w = '';
+        }
+      };
+
+      const getCellText = (r, c) => {
+        if (!grid[r] || !grid[r][c]) return '';
+        const val = grid[r][c].w !== '' ? grid[r][c].w : grid[r][c].v;
+        return val === undefined || val === null ? '' : String(val);
+      };
+
+      // --- STEP 1: Check Column C for "SAMPLE" ---
+      let foundSample = false;
+      for (let r = 0; r <= maxRow; r++) {
+        if (getCellText(r, COL_C).toUpperCase().includes('SAMPLE')) {
+          foundSample = true;
+          break;
+        }
+      }
+
+      // --- STEP 2: Clear every page's G.W., N.W. and weight unit labels ---
+      let clearedHeaderCells = 0;
+      for (let r = 0; r <= maxRow; r++) {
+        for (let c = COL_AX; c <= Math.min(maxCol, COL_BF + 2); c++) {
+          const txt = getCellText(r, c).trim().toUpperCase();
+          if (
+            txt === 'G.W.' ||
+            txt === 'N.W.' ||
+            txt === 'GW' ||
+            txt === 'NW' ||
+            txt === '(KG/CTN)' ||
+            txt === '(TOTAL KG)' ||
+            txt === 'KG/CTN' ||
+            txt === 'TOTAL KG'
+          ) {
+            clearCellOrMerge(r, c);
+            clearedHeaderCells++;
+          }
+        }
+      }
+
+      // --- STEP 3: Clear AX/BB/BF on item rows & extract/clear AZ/BD on TOTAL rows ---
+      let clearCount = 0;
+      let totalValStr = '';
+      let remarksRow = -1;
+      let originalRemarksJ = '';
+
+      for (let i = 1; i <= maxRow; i++) {
+        const textB = getCellText(i, COL_B).trim();
+        const textC = getCellText(i, COL_C).trim();
+
+        if (textB !== '' && textC !== '') {
+          clearCellOrMerge(i, COL_AX);
+          clearCellOrMerge(i, COL_BB);
+          clearCellOrMerge(i, COL_BF);
+          clearCount++;
+        }
+
+        if (textC.toUpperCase().includes('TOTAL')) {
+          const azRaw = getCellText(i, COL_AZ).trim();
+          if (azRaw !== '') totalValStr = azRaw;
+          clearCellOrMerge(i, COL_AZ);
+          clearCellOrMerge(i, COL_BD);
+        }
+
+        if (textB.toUpperCase().includes('REMARKS')) {
+          remarksRow = i;
+        }
+      }
+
+      // --- STEP 4: Append Total GW + optional (Including Sample) to Remarks in Col J ---
+      if (remarksRow >= 0) {
+        originalRemarksJ = getCellText(remarksRow, COL_J);
+      }
+      const spaceCount = 40;
+      const finalRemarksJ = buildRemarksWithTotal(originalRemarksJ, totalValStr, foundSample, spaceCount);
+      if (remarksRow >= 0 && finalRemarksJ !== '') {
+        grid[remarksRow][COL_J].v = finalRemarksJ;
+        grid[remarksRow][COL_J].w = finalRemarksJ;
+      }
+
+      // --- STEP 5: Exact V13 Strict Page Breaks before "BANDAI NAMCO TRADING" ---
+      const pageBreaks = [];
+      for (let r = 0; r <= maxRow; r++) {
+        for (let cIdx = 0; cIdx < 26; cIdx++) {
+          if (getCellText(r, cIdx).toUpperCase().includes('BANDAI NAMCO TRADING')) {
+            if (r > 4) {
+              // In 0-based rows, 1-based R56 is r=55 (Bandai Namco Trading is at R56 => r=55, blank row above is r=54)
+              // Keep exact r (e.g. r=55 => Row 56) so each page header stays clean
+              if (!pageBreaks.includes(r)) {
+                pageBreaks.push(r);
+              }
+            }
+            break;
+          }
+        }
+      }
+
+      const fileObj = {
+        id: 'file-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+        fileName,
+        baseName: fileName.replace(/\.(xls|xlsx|xlsm|xlsb)$/i, ''),
+        ext: (fileName.match(/\.(xls|xlsx|xlsm|xlsb)$/i)?.[1] || 'xlsx').toLowerCase(),
+        originalBuffer,
+        sheetName: firstSheetName,
+        maxRow,
+        maxCol,
+        grid,
+        merges,
+        colWidths,
+        baseRowHeights,
+        rowHeights: [...baseRowHeights],
+        foundSample,
+        clearCount,
+        clearedHeaderCells,
+        totalValStr,
+        remarksRow,
+        originalRemarksJ,
+        spaceCount,
+        finalRemarksJ,
+        pageBreaks,
+        padMain: 5,
+        padRemarks: 8,
+        fontScalePct: 82
+      };
+
+      recalculateRowHeights(fileObj);
+      return fileObj;
+    }
+
+    function buildRemarksWithTotal(origJ, totalGw, isSample, spaces) {
+      if (!origJ) return '';
+      if (!totalGw) return origJ;
+      const lines = origJ.split(/\r?\n/);
+      let suffix = ' '.repeat(Math.max(0, spaces)) + 'Total GW: ' + totalGw;
+      if (isSample) {
+        suffix += ' (Including Sample)';
+      }
+      lines[0] = lines[0] + suffix;
+      return lines.join('\n');
+    }
+
+    function recalculateRowHeights(fileObj) {
+      const { grid, maxRow, baseRowHeights, rowHeights, padMain, padRemarks, remarksRow } = fileObj;
+      for (let i = 0; i <= maxRow; i++) {
+        const textB = String(grid[i]?.[COL_B]?.w || grid[i]?.[COL_B]?.v || '').trim();
+        const textC = String(grid[i]?.[COL_C]?.w || grid[i]?.[COL_C]?.v || '').trim();
+        const textJ = String(grid[i]?.[COL_J]?.w || grid[i]?.[COL_J]?.v || '').trim();
+
+        const isMainItem = (textB !== '' && textC !== '' && !textC.toUpperCase().includes('DESCRIPTION'));
+        const isRem = (i === remarksRow || textJ.length > 30);
+
+        let h = Math.max(13, baseRowHeights[i] || 13.5);
+        if (isMainItem) h += padMain;
+        else if (isRem) h += padRemarks;
+
+        const cLines = textC.split(/\r?\n/).length;
+        const jLines = textJ.split(/\r?\n/).length;
+        const maxLines = Math.max(cLines, jLines);
+        if (maxLines > 1) {
+          h = Math.max(h, maxLines * 13 + padMain);
+        }
+
+        rowHeights[i] = Math.min(409, h);
+      }
+    }
+
+    // =========================================================================
+    // UI BINDING & INTERACTIVE PREVIEW RENDERING
+    // =========================================================================
+    const fileInput = document.getElementById('fileInput');
+    const dropZoneBar = document.getElementById('dropZoneBar');
+    const uploadHeaderBtn = document.getElementById('uploadHeaderBtn');
+    const batchFileSelect = document.getElementById('batchFileSelect');
+    const reapplyAutoBtn = document.getElementById('reapplyAutoBtn');
+    const downloadOriginalBtn = document.getElementById('downloadOriginalBtn');
+    const exportBothBtn = document.getElementById('exportBothBtn');
+    const exportBatchBtn = document.getElementById('exportBatchBtn');
+    const batchCountBtn = document.getElementById('batchCountBtn');
+
+    const statusText = document.getElementById('statusText');
+    const sampleBadge = document.getElementById('sampleBadge');
+    const activeFileLabel = document.getElementById('activeFileLabel');
+    const kpiClearCount = document.getElementById('kpiClearCount');
+    const kpiClearedHeaderCells = document.getElementById('kpiClearedHeaderCells');
+    const kpiBreakCount = document.getElementById('kpiBreakCount');
+    const kpiTotalGw = document.getElementById('kpiTotalGw');
+
+    const emptyControlsPlaceholder = document.getElementById('emptyControlsPlaceholder');
+    const controlsContent = document.getElementById('controlsContent');
+    const chkSampleDetected = document.getElementById('chkSampleDetected');
+    const lblClearedRows = document.getElementById('lblClearedRows');
+    const lblRemarksRow = document.getElementById('lblRemarksRow');
+    const inputTotalGw = document.getElementById('inputTotalGw');
+    const inputSpaceCount = document.getElementById('inputSpaceCount');
+    const textareaRemarksJ = document.getElementById('textareaRemarksJ');
+    const btnRebuildRemarks = document.getElementById('btnRebuildRemarks');
+    const lblTotalPages = document.getElementById('lblTotalPages');
+    const inputNewBreakRow = document.getElementById('inputNewBreakRow');
+    const btnAddBreak = document.getElementById('btnAddBreak');
+    const pageBreaksList = document.getElementById('pageBreaksList');
+
+    const inputPadMain = document.getElementById('inputPadMain');
+    const inputPadRemarks = document.getElementById('inputPadRemarks');
+    const inputFontScale = document.getElementById('inputFontScale');
+    const chkShowRowNumbers = document.getElementById('chkShowRowNumbers');
+    const btnApplyLayout = document.getElementById('btnApplyLayout');
+
+    const previewViewport = document.getElementById('previewViewport');
+    const zoomOutBtn = document.getElementById('zoomOutBtn');
+    const zoomInBtn = document.getElementById('zoomInBtn');
+    const zoomFitBtn = document.getElementById('zoomFitBtn');
+    const zoomLabel = document.getElementById('zoomLabel');
+
+    const cellEditModal = document.getElementById('cellEditModal');
+    const modalCellCoord = document.getElementById('modalCellCoord');
+    const modalCellInput = document.getElementById('modalCellInput');
+    const btnCloseCellModal = document.getElementById('btnCloseCellModal');
+    const btnCancelCellModal = document.getElementById('btnCancelCellModal');
+    const btnSaveCellModal = document.getElementById('btnSaveCellModal');
+    const btnInsertBreakHere = document.getElementById('btnInsertBreakHere');
+
+    function getActiveFile() {
+      return appState.files[appState.activeIndex] || null;
+    }
+
+    dropZoneBar.addEventListener('click', () => fileInput.click());
+    uploadHeaderBtn.addEventListener('click', () => fileInput.click());
+
+    dropZoneBar.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZoneBar.classList.add('border-blue-500', 'bg-blue-50/80');
+    });
+    dropZoneBar.addEventListener('dragleave', () => {
+      dropZoneBar.classList.remove('border-blue-500', 'bg-blue-50/80');
+    });
+    dropZoneBar.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZoneBar.classList.remove('border-blue-500', 'bg-blue-50/80');
+      if (e.dataTransfer.files.length) handleFilesUpload(e.dataTransfer.files);
+    });
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files.length) handleFilesUpload(e.target.files);
+      e.target.value = '';
+    });
+
+    async function handleFilesUpload(fileList) {
+      statusText.textContent = `Processing ${fileList.length} Excel file(s)...`;
+      const newEntries = [];
+
+      for (const file of fileList) {
+        if (!/\.(xls|xlsx|xlsm|xlsb)$/i.test(file.name)) continue;
+        const buf = await file.arrayBuffer();
+        const processed = parseAndAutomateWorkbook(file.name, buf);
+        newEntries.push(processed);
+      }
+
+      if (!newEntries.length) {
+        alert('Please select valid Excel files (.xls, .xlsx, .xlsm, .xlsb).');
+        return;
+      }
+
+      appState.files = newEntries;
+      appState.activeIndex = 0;
+      refreshFileSelector();
+      loadActiveFileToUI();
+      statusText.textContent = `Formatted ${newEntries.length} file(s) — Ready to fine-tune or click "Export Excel + PDF"`;
+    }
+
+    function refreshFileSelector() {
+      batchFileSelect.innerHTML = '';
+      appState.files.forEach((f, idx) => {
+        const opt = document.createElement('option');
+        opt.value = String(idx);
+        opt.textContent = `[${idx + 1}/${appState.files.length}] ${f.fileName}`;
+        batchFileSelect.appendChild(opt);
+      });
+      batchFileSelect.disabled = appState.files.length === 0;
+      batchFileSelect.value = String(appState.activeIndex);
+
+      if (appState.files.length > 1) {
+        exportBatchBtn.classList.remove('hidden');
+        exportBatchBtn.disabled = false;
+        batchCountBtn.textContent = String(appState.files.length);
+      } else {
+        exportBatchBtn.classList.add('hidden');
+        exportBatchBtn.disabled = true;
+      }
+    }
+
+    batchFileSelect.addEventListener('change', (e) => {
+      appState.activeIndex = Number(e.target.value);
+      loadActiveFileToUI();
+    });
+
+    reapplyAutoBtn.addEventListener('click', () => {
+      const current = getActiveFile();
+      if (!current) return;
+      const resetObj = parseAndAutomateWorkbook(current.fileName, current.originalBuffer);
+      appState.files[appState.activeIndex] = resetObj;
+      loadActiveFileToUI();
+      statusText.textContent = `Reset "${resetObj.fileName}" back to clean automated output`;
+    });
+
+    function loadActiveFileToUI() {
+      const f = getActiveFile();
+      const hasFile = Boolean(f);
+
+      reapplyAutoBtn.disabled = !hasFile;
+      downloadOriginalBtn.disabled = !hasFile;
+      exportBothBtn.disabled = !hasFile || appState.isExporting;
+      zoomOutBtn.disabled = !hasFile;
+      zoomInBtn.disabled = !hasFile;
+      zoomFitBtn.disabled = !hasFile;
+
+      emptyControlsPlaceholder.classList.toggle('hidden', hasFile);
+      controlsContent.classList.toggle('hidden', !hasFile);
+
+      if (!f) return;
+
+      activeFileLabel.textContent = `${f.fileName} (${f.maxRow + 1} rows × ${f.maxCol + 1} cols)`;
+      kpiClearCount.textContent = String(f.clearCount);
+      kpiClearedHeaderCells.textContent = String(f.clearedHeaderCells);
+      kpiBreakCount.textContent = String(f.pageBreaks.length);
+      kpiTotalGw.textContent = f.totalValStr || 'Not Found';
+
+      sampleBadge.classList.remove('hidden');
+      if (f.foundSample) {
+        sampleBadge.textContent = 'SAMPLE DETECTED: + (Including Sample)';
+        sampleBadge.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full mono-font bg-amber-100 text-amber-800 border border-amber-300';
+      } else {
+        sampleBadge.textContent = 'NO SAMPLE: Standard Total GW';
+        sampleBadge.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full mono-font bg-emerald-100 text-emerald-800 border border-emerald-300';
+      }
+
+      chkSampleDetected.checked = f.foundSample;
+      lblClearedRows.textContent = String(f.clearCount);
+      lblRemarksRow.textContent = f.remarksRow >= 0 ? `Row ${f.remarksRow + 1}` : 'Not Found';
+      inputTotalGw.value = f.totalValStr;
+      inputSpaceCount.value = String(f.spaceCount);
+      textareaRemarksJ.value = f.finalRemarksJ;
+
+      inputPadMain.value = String(f.padMain);
+      inputPadRemarks.value = String(f.padRemarks);
+      inputFontScale.value = String(f.fontScalePct);
+
+      renderPageBreaksSidebar();
+      renderPaginatedPreview();
+    }
+
+    // =========================================================================
+    // FINE-TUNING INTERACTIVE CONTROLS
+    // =========================================================================
+    chkSampleDetected.addEventListener('change', () => {
+      const f = getActiveFile();
+      if (!f) return;
+      f.foundSample = chkSampleDetected.checked;
+      rebuildRemarksFromControls();
+      loadActiveFileToUI();
+    });
+
+    function rebuildRemarksFromControls() {
+      const f = getActiveFile();
+      if (!f) return;
+      f.totalValStr = inputTotalGw.value.trim();
+      f.spaceCount = Math.max(0, Number(inputSpaceCount.value) || 0);
+      f.finalRemarksJ = buildRemarksWithTotal(f.originalRemarksJ, f.totalValStr, f.foundSample, f.spaceCount);
+      textareaRemarksJ.value = f.finalRemarksJ;
+      kpiTotalGw.textContent = f.totalValStr || 'Not Found';
+
+      if (f.remarksRow >= 0 && f.grid[f.remarksRow]) {
+        f.grid[f.remarksRow][COL_J].v = f.finalRemarksJ;
+        f.grid[f.remarksRow][COL_J].w = f.finalRemarksJ;
+      }
+      renderPaginatedPreview();
+    }
+
+    inputTotalGw.addEventListener('input', rebuildRemarksFromControls);
+    inputSpaceCount.addEventListener('input', rebuildRemarksFromControls);
+    btnRebuildRemarks.addEventListener('click', rebuildRemarksFromControls);
+
+    textareaRemarksJ.addEventListener('input', () => {
+      const f = getActiveFile();
+      if (!f) return;
+      f.finalRemarksJ = textareaRemarksJ.value;
+      if (f.remarksRow >= 0 && f.grid[f.remarksRow]) {
+        f.grid[f.remarksRow][COL_J].v = f.finalRemarksJ;
+        f.grid[f.remarksRow][COL_J].w = f.finalRemarksJ;
+      }
+      renderPaginatedPreview();
+    });
+
+    function renderPageBreaksSidebar() {
+      const f = getActiveFile();
+      if (!f) return;
+      f.pageBreaks.sort((a, b) => a - b);
+      kpiBreakCount.textContent = String(f.pageBreaks.length);
+      lblTotalPages.textContent = `${f.pageBreaks.length + 1} Page(s)`;
+
+      if (!f.pageBreaks.length) {
+        pageBreaksList.innerHTML = `<div class="text-[10px] text-slate-400 italic py-1">No page breaks set.</div>`;
+        return;
+      }
+
+      pageBreaksList.innerHTML = f.pageBreaks.map((rowIdx, idx) => {
+        const previewSnippet = getRowPreviewSnippet(f, rowIdx);
+        return `
+          <div class="flex items-center justify-between gap-2 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-[11px]">
+            <div class="min-w-0">
+              <span class="font-bold text-violet-700 mono-font">Page ${idx + 2} Starts @ Row ${rowIdx + 1}</span>
+              <div class="text-[10px] text-slate-400 truncate">${escapeHtml(previewSnippet)}</div>
+            </div>
+            <button type="button" data-remove-break="${rowIdx}" class="w-6 h-6 rounded hover:bg-rose-50 text-slate-400 hover:text-rose-600 flex items-center justify-center shrink-0 cursor-pointer" title="Remove Page Break">
+              <i class="fa-solid fa-trash-can text-[10px]"></i>
+            </button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function getRowPreviewSnippet(f, r) {
+      const texts = [];
+      for (let checkR = r; checkR <= Math.min(f.maxRow, r + 3); checkR++) {
+        for (let c = 0; c <= f.maxCol; c++) {
+          const val = String(f.grid[checkR]?.[c]?.w || f.grid[checkR]?.[c]?.v || '').trim();
+          if (val) texts.push(val);
+          if (texts.join(' ').length > 52) return texts.join(' ');
+        }
+      }
+      return texts.join(' ') || '(Empty Row)';
+    }
+
+    function togglePageBreakAtRow(rowIdx) {
+      const f = getActiveFile();
+      if (!f || rowIdx < 1 || rowIdx > f.maxRow) return;
+      const existingIdx = f.pageBreaks.indexOf(rowIdx);
+      if (existingIdx >= 0) {
+        f.pageBreaks.splice(existingIdx, 1);
+      } else {
+        f.pageBreaks.push(rowIdx);
+      }
+      renderPageBreaksSidebar();
+      renderPaginatedPreview();
+    }
+
+    btnAddBreak.addEventListener('click', () => {
+      const f = getActiveFile();
+      if (!f) return;
+      const rowNum1Based = Number(inputNewBreakRow.value);
+      if (!rowNum1Based || rowNum1Based < 2 || rowNum1Based > f.maxRow + 1) {
+        alert(`Please enter a valid Excel row number between 2 and ${f.maxRow + 1}.`);
+        return;
+      }
+      const r0 = rowNum1Based - 1;
+      if (!f.pageBreaks.includes(r0)) {
+        f.pageBreaks.push(r0);
+        renderPageBreaksSidebar();
+        renderPaginatedPreview();
+      }
+      inputNewBreakRow.value = '';
+    });
+
+    pageBreaksList.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-remove-break]');
+      if (!btn) return;
+      togglePageBreakAtRow(Number(btn.dataset.removeBreak));
+    });
+
+    btnApplyLayout.addEventListener('click', () => {
+      const f = getActiveFile();
+      if (!f) return;
+      f.padMain = Math.max(0, Number(inputPadMain.value) || 0);
+      f.padRemarks = Math.max(0, Number(inputPadRemarks.value) || 0);
+      f.fontScalePct = Math.max(55, Math.min(120, Number(inputFontScale.value) || 82));
+
+      recalculateRowHeights(f);
+      renderPaginatedPreview();
+      statusText.textContent = 'Updated V27 row padding & font scale';
+    });
+
+    chkShowRowNumbers.addEventListener('change', () => {
+      appState.showRowGutter = chkShowRowNumbers.checked;
+      renderPaginatedPreview();
+    });
+
+    // =========================================================================
+    // CLEAN PREVIEW RENDERER (Eliminates Stray Horizontal Band Artifacts)
+    // =========================================================================
+    function buildMergeLookup(merges) {
+      const masterMap = new Map();
+      const coveredSet = new Set();
+      for (const m of merges) {
+        masterMap.set(`${m.s.r},${m.s.c}`, {
+          rowspan: m.e.r - m.s.r + 1,
+          colspan: m.e.c - m.s.c + 1,
+          endR: m.e.r,
+          endC: m.e.c
+        });
+        for (let r = m.s.r; r <= m.e.r; r++) {
+          for (let c = m.s.c; c <= m.e.c; c++) {
+            if (r === m.s.r && c === m.s.c) continue;
+            coveredSet.add(`${r},${c}`);
+          }
+        }
+      }
+      return { masterMap, coveredSet };
+    }
+
+    function mapExcelBorderToCss(borderObj) {
+      if (!borderObj || !borderObj.style || borderObj.style === 'none') return 'none';
+      const st = borderObj.style;
+      let width = '0.8px';
+      let line = 'solid';
+      if (st === 'medium') width = '1.4px';
+      else if (st === 'thick') width = '2px';
+      else if (st === 'double') { width = '2.5px'; line = 'double'; }
+      else if (st === 'dashed' || st === 'mediumDashed') line = 'dashed';
+      else if (st === 'dotted' || st === 'hair') line = 'dotted';
+      return `${width} ${line} #000000`;
+    }
+
+    function getCellCssStyle(f, r, c, masterInfo) {
+      const cell = f.grid[r][c];
+      const s = cell.s || {};
+      const styles = [];
+      const fontScale = f.fontScalePct / 100;
+
+      const font = s.font || {};
+      const fontName = font.name ? `'${font.name}', 'Arial', sans-serif` : "'Arial', sans-serif";
+      const rawPt = font.sz ? font.sz : 9;
+      const effectivePt = Math.max(6, rawPt * fontScale).toFixed(2);
+      styles.push(`font-family:${fontName}`);
+      styles.push(`font-size:${effectivePt}pt`);
+      if (font.bold) styles.push('font-weight:700');
+      if (font.italic) styles.push('font-style:italic');
+      if (font.underline) styles.push('text-decoration:underline');
+
+      const align = s.alignment || {};
+      if (align.horizontal && align.horizontal !== 'general') {
+        styles.push(`text-align:${align.horizontal}`);
+      } else if (cell.t === 'n') {
+        styles.push('text-align:right');
+      } else {
+        styles.push('text-align:left');
+      }
+
+      if (align.vertical === 'top') styles.push('vertical-align:top');
+      else if (align.vertical === 'bottom') styles.push('vertical-align:bottom');
+      else styles.push('vertical-align:middle');
+
+      const endR = masterInfo ? masterInfo.endR : r;
+      const endC = masterInfo ? masterInfo.endC : c;
+
+      const bTop = f.grid[r]?.[c]?.s?.border?.top;
+      const bBottom = f.grid[endR]?.[c]?.s?.border?.bottom;
+      const bLeft = f.grid[r]?.[c]?.s?.border?.left;
+      const bRight = f.grid[endC]?.[c]?.s?.border?.right;
+
+      const cssTop = mapExcelBorderToCss(bTop);
+      const cssBottom = mapExcelBorderToCss(bBottom);
+      const cssLeft = mapExcelBorderToCss(bLeft);
+      const cssRight = mapExcelBorderToCss(bRight);
+
+      if (cssTop !== 'none') styles.push(`border-top:${cssTop}`);
+      if (cssBottom !== 'none') styles.push(`border-bottom:${cssBottom}`);
+      if (cssLeft !== 'none') styles.push(`border-left:${cssLeft}`);
+      if (cssRight !== 'none') styles.push(`border-right:${cssRight}`);
+
+      return styles.join(';');
+    }
+
+    function renderPaginatedPreview() {
+      const f = getActiveFile();
+      if (!f) return;
+
+      const { masterMap, coveredSet } = buildMergeLookup(f.merges);
+
+      const sortedBreaks = [...new Set(f.pageBreaks)].filter(r => r > 0 && r <= f.maxRow).sort((a, b) => a - b);
+      const pageRanges = [];
+      let startR = 0;
+      for (const br of sortedBreaks) {
+        if (br > startR) {
+          pageRanges.push({ start: startR, end: br - 1 });
+          startR = br;
+        }
+      }
+      if (startR <= f.maxRow) {
+        pageRanges.push({ start: startR, end: f.maxRow });
+      }
+
+      const totalColWeight = f.colWidths.reduce((acc, w) => acc + w, 0) || 1;
+      const colGroupHtml = `<colgroup>${
+        (appState.showRowGutter ? '<col style="width:24px;">' : '') +
+        f.colWidths.map(w => `<col style="width:${((w / totalColWeight) * 100).toFixed(3)}%;">`).join('')
+      }</colgroup>`;
+
+      const pagesHtml = pageRanges.map((pr, pageIdx) => {
+        const rowsHtml = [];
+        for (let r = pr.start; r <= pr.end; r++) {
+          // Check if row has any non-empty cell or border; keep tiny blank separator rows compact
+          let rowHasContent = false;
+          for (let c = 0; c <= f.maxCol; c++) {
+            const val = String(f.grid[r]?.[c]?.w || f.grid[r]?.[c]?.v || '').trim();
+            if (val !== '') { rowHasContent = true; break; }
+          }
+          const hPt = rowHasContent
+            ? Math.max(12, f.rowHeights[r] || 13.5).toFixed(1)
+            : Math.min(8, Math.max(3, (f.baseRowHeights[r] || 6) * 0.5)).toFixed(1);
+
+          const cellsHtml = [];
+
+          if (appState.showRowGutter) {
+            const isBreakRow = f.pageBreaks.includes(r);
+            cellsHtml.push(
+              `<td data-toggle-break="${r}" class="cursor-pointer text-center mono-font text-[8px] select-none ${
+                isBreakRow ? 'bg-violet-600 text-white font-bold' : 'bg-slate-100 text-slate-400 hover:bg-violet-100 hover:text-violet-700'
+              }" title="Row ${r + 1}: Click to toggle page break before this row">${r + 1}</td>`
+            );
+          }
+
+          for (let c = 0; c <= f.maxCol; c++) {
+            const key = `${r},${c}`;
+            if (coveredSet.has(key)) continue;
+
+            const masterInfo = masterMap.get(key);
+            const effectiveRowspan = masterInfo ? Math.min(masterInfo.rowspan, pr.end - r + 1) : 1;
+            const colspanAttr = masterInfo && masterInfo.colspan > 1 ? ` colspan="${masterInfo.colspan}"` : '';
+            const rowspanAttr = effectiveRowspan > 1 ? ` rowspan="${effectiveRowspan}"` : '';
+
+            const displayVal = f.grid[r][c].w !== '' ? f.grid[r][c].w : f.grid[r][c].v;
+            const cellStyle = getCellCssStyle(f, r, c, masterInfo);
+
+            cellsHtml.push(
+              `<td data-cell-r="${r}" data-cell-c="${c}"${colspanAttr}${rowspanAttr} style="${cellStyle}" class="cursor-cell">${escapeHtml(displayVal)}</td>`
+            );
+          }
+
+          rowsHtml.push(`<tr style="height:${hPt}pt;">${cellsHtml.join('')}</tr>`);
+        }
+
+        return `
+          <div class="flex flex-col items-center gap-1.5">
+            <div class="w-full flex items-center justify-between text-[11px] font-bold text-slate-300 px-1">
+              <span class="mono-font flex items-center gap-2">
+                <span class="bg-blue-600 text-white px-2 py-0.5 rounded text-[10px]">PAGE ${pageIdx + 1} OF ${pageRanges.length}</span>
+                <span class="text-slate-400">Excel Rows ${pr.start + 1} – ${pr.end + 1}</span>
+              </span>
+              ${pageIdx > 0 ? `<button type="button" data-remove-break="${pr.start}" class="text-[10px] text-rose-400 hover:text-rose-300 cursor-pointer"><i class="fa-solid fa-xmark mr-1"></i>Merge with Previous Page</button>` : ''}
+            </div>
+            <div class="a4-page-sheet" data-preview-page="${pageIdx + 1}">
+              <table class="pl-grid-table">
+                ${colGroupHtml}
+                <tbody>${rowsHtml.join('')}</tbody>
+              </table>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      previewViewport.innerHTML = `<div id="previewScaleWrapper" class="flex flex-col items-center gap-6 origin-top transition-transform duration-150">${pagesHtml}</div>`;
+      applyPreviewZoom(appState.zoomLevel);
+    }
+
+    // =========================================================================
+    // PREVIEW INTERACTIONS: ZOOM, PAN, DIRECT CELL EDITING & ROW BREAK TOGGLE
+    // =========================================================================
+    function applyPreviewZoom(newZoom) {
+      appState.zoomLevel = Math.max(0.45, Math.min(1.5, Math.round(newZoom * 100) / 100));
+      zoomLabel.textContent = `${Math.round(appState.zoomLevel * 100)}%`;
+      const wrapper = document.getElementById('previewScaleWrapper');
+      if (wrapper) {
+        wrapper.style.transform = `scale(${appState.zoomLevel})`;
+      }
+      previewViewport.classList.add('can-pan');
+    }
+
+    zoomOutBtn.addEventListener('click', () => applyPreviewZoom(appState.zoomLevel - 0.1));
+    zoomInBtn.addEventListener('click', () => applyPreviewZoom(appState.zoomLevel + 0.1));
+    zoomFitBtn.addEventListener('click', () => applyPreviewZoom(0.90));
+
+    let isPanning = false;
+    let panStart = { x: 0, y: 0, scrollLeft: 0, scrollTop: 0 };
+
+    previewViewport.addEventListener('mousedown', (e) => {
+      if (e.button !== 0 || e.target.closest('td')) return;
+      isPanning = true;
+      panStart = {
+        x: e.clientX,
+        y: e.clientY,
+        scrollLeft: previewViewport.scrollLeft,
+        scrollTop: previewViewport.scrollTop
+      };
+      previewViewport.classList.add('is-panning');
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isPanning) return;
+      previewViewport.scrollLeft = panStart.scrollLeft - (e.clientX - panStart.x);
+      previewViewport.scrollTop = panStart.scrollTop - (e.clientY - panStart.y);
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (!isPanning) return;
+      isPanning = false;
+      previewViewport.classList.remove('is-panning');
+    });
+
+    previewViewport.addEventListener('click', (e) => {
+      const f = getActiveFile();
+      if (!f) return;
+
+      const breakCell = e.target.closest('[data-toggle-break]');
+      if (breakCell) {
+        togglePageBreakAtRow(Number(breakCell.dataset.toggleBreak));
+        return;
+      }
+
+      const removeBreakBtn = e.target.closest('[data-remove-break]');
+      if (removeBreakBtn) {
+        togglePageBreakAtRow(Number(removeBreakBtn.dataset.removeBreak));
+        return;
+      }
+
+      const td = e.target.closest('[data-cell-r]');
+      if (td) {
+        const r = Number(td.dataset.cellR);
+        const c = Number(td.dataset.cellC);
+        openCellEditModal(r, c);
+      }
+    });
+
+    function openCellEditModal(r, c) {
+      const f = getActiveFile();
+      if (!f) return;
+      appState.editingTarget = { r, c };
+      const colLetter = indexToCol(c);
+      modalCellCoord.textContent = `${colLetter}${r + 1} (Row ${r + 1})`;
+      const currentVal = f.grid[r][c].w !== '' ? f.grid[r][c].w : f.grid[r][c].v;
+      modalCellInput.value = currentVal === undefined || currentVal === null ? '' : String(currentVal);
+      cellEditModal.classList.remove('hidden');
+      modalCellInput.focus();
+    }
+
+    function closeCellEditModal() {
+      cellEditModal.classList.add('hidden');
+      appState.editingTarget = null;
+    }
+
+    btnCloseCellModal.addEventListener('click', closeCellEditModal);
+    btnCancelCellModal.addEventListener('click', closeCellEditModal);
+
+    btnSaveCellModal.addEventListener('click', () => {
+      const f = getActiveFile();
+      const target = appState.editingTarget;
+      if (!f || !target) return;
+
+      const newVal = modalCellInput.value;
+      f.grid[target.r][target.c].v = newVal;
+      f.grid[target.r][target.c].w = newVal;
+
+      if (target.r === f.remarksRow && target.c === COL_J) {
+        f.finalRemarksJ = newVal;
+        textareaRemarksJ.value = newVal;
+      }
+
+      closeCellEditModal();
+      renderPaginatedPreview();
+      statusText.textContent = `Updated cell ${indexToCol(target.c)}${target.r + 1}`;
+    });
+
+    btnInsertBreakHere.addEventListener('click', () => {
+      const target = appState.editingTarget;
+      if (!target) return;
+      const r = target.r;
+      closeCellEditModal();
+      togglePageBreakAtRow(r);
+    });
+
+    // =========================================================================
+    // EXPORT TO EXCEL (.xlsx WITH ROW BREAKS) & FULL-ROW-VISIBLE PDF
+    // =========================================================================
+    function buildExportableXlsxWorkbook(fileObj) {
+      const wb = XLSX.utils.book_new();
+      const ws = {};
+      const { grid, maxRow, maxCol, merges, colWidths, rowHeights, pageBreaks } = fileObj;
+
+      for (let r = 0; r <= maxRow; r++) {
+        for (let c = 0; c <= maxCol; c++) {
+          const cellData = grid[r][c];
+          const addr = XLSX.utils.encode_cell({ r, c });
+          const rawV = cellData.v;
+          const isNum = typeof rawV === 'number' && !Number.isNaN(rawV);
+
+          ws[addr] = {
+            v: rawV === undefined || rawV === null ? '' : rawV,
+            t: isNum ? 'n' : 's',
+            s: cellData.s || {}
+          };
+        }
+      }
+
+      ws['!ref'] = XLSX.utils.encode_range({
+        s: { r: 0, c: 0 },
+        e: { r: maxRow, c: maxCol }
+      });
+
+      ws['!merges'] = merges.map(m => ({
+        s: { r: m.s.r, c: m.s.c },
+        e: { r: m.e.r, c: m.e.c }
+      }));
+
+      ws['!cols'] = colWidths.map(wpx => ({ wpx }));
+      ws['!rows'] = rowHeights.map(hpt => ({ hpt }));
+      ws['!rowBreaks'] = [...new Set(pageBreaks)].sort((a, b) => a - b);
+      ws['!pageSetup'] = {
+        paperSize: 9,
+        orientation: 'portrait',
+        fitToWidth: 1,
+        fitToHeight: 0
+      };
+
+      XLSX.utils.book_append_sheet(wb, ws, fileObj.sheetName || 'Sheet1');
+      return wb;
+    }
+
+    async function generateAndDownloadPdfForActiveFile(f) {
+      const sheets = Array.from(previewViewport.querySelectorAll('.a4-page-sheet'));
+      if (!sheets.length) return;
+
+      const wrapper = document.getElementById('previewScaleWrapper');
+      const prevWrapperTransform = wrapper ? wrapper.style.transform : '';
+      if (wrapper) wrapper.style.transform = 'scale(1)';
+
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+        compress: true
+      });
+
+      const pageWidthMm = 210;
+      const pageHeightMm = 297;
+      let isFirstPdfPage = true;
+
+      for (let i = 0; i < sheets.length; i++) {
+        statusText.textContent = `Rendering PDF page ${i + 1} of ${sheets.length}...`;
+        const canvas = await html2canvas(sheets[i], {
+          scale: 2.2,
+          useCORS: true,
+          backgroundColor: '#ffffff',
+          logging: false,
+          windowWidth: sheets[i].scrollWidth,
+          windowHeight: sheets[i].scrollHeight
+        });
+
+        const imgWidthMm = pageWidthMm;
+        const imgHeightMm = (canvas.height * imgWidthMm) / canvas.width;
+
+        let heightLeftMm = imgHeightMm;
+        let offsetYmm = 0;
+
+        while (heightLeftMm > 0.5) {
+          if (!isFirstPdfPage) {
+            pdf.addPage('a4', 'portrait');
+          }
+          isFirstPdfPage = false;
+
+          pdf.addImage(
+            canvas.toDataURL('image/jpeg', 0.94),
+            'JPEG',
+            0,
+            -offsetYmm,
+            imgWidthMm,
+            imgHeightMm,
+            undefined,
+            'FAST'
+          );
+
+          heightLeftMm -= pageHeightMm;
+          offsetYmm += pageHeightMm;
+        }
+      }
+
+      if (wrapper) wrapper.style.transform = prevWrapperTransform;
+      const outPdfName = `${f.baseName} (edited).pdf`;
+      pdf.save(outPdfName);
+    }
+
+    exportBothBtn.addEventListener('click', async () => {
+      const f = getActiveFile();
+      if (!f || appState.isExporting) return;
+
+      appState.isExporting = true;
+      exportBothBtn.disabled = true;
+      const origHtml = exportBothBtn.innerHTML;
+      exportBothBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>Exporting Excel + PDF...</span>';
+
+      try {
+        const wb = buildExportableXlsxWorkbook(f);
+        const outXlsxName = `${f.baseName} (edited).xlsx`;
+        XLSX.writeFile(wb, outXlsxName);
+        statusText.textContent = `Downloaded "${outXlsxName}", generating PDF...`;
+
+        await new Promise(res => setTimeout(res, 300));
+
+        await generateAndDownloadPdfForActiveFile(f);
+        statusText.textContent = `Completed! Downloaded "${outXlsxName}" and "${f.baseName} (edited).pdf"`;
+      } catch (err) {
+        console.error(err);
+        alert('Export failed: ' + err.message);
+        statusText.textContent = 'Export failed';
+      } finally {
+        appState.isExporting = false;
+        exportBothBtn.disabled = false;
+        exportBothBtn.innerHTML = origHtml;
+      }
+    });
+
+    exportBatchBtn.addEventListener('click', async () => {
+      if (!appState.files.length || appState.isExporting) return;
+      appState.isExporting = true;
+      exportBatchBtn.disabled = true;
+
+      try {
+        for (let idx = 0; idx < appState.files.length; idx++) {
+          appState.activeIndex = idx;
+          batchFileSelect.value = String(idx);
+          loadActiveFileToUI();
+          await new Promise(res => setTimeout(res, 150));
+
+          const f = getActiveFile();
+          const wb = buildExportableXlsxWorkbook(f);
+          XLSX.writeFile(wb, `${f.baseName} (edited).xlsx`);
+          await new Promise(res => setTimeout(res, 250));
+          await generateAndDownloadPdfForActiveFile(f);
+        }
+        statusText.textContent = `Batch exported Excel + PDF for all ${appState.files.length} files`;
+      } finally {
+        appState.isExporting = false;
+        exportBatchBtn.disabled = false;
+      }
+    });
+
+    downloadOriginalBtn.addEventListener('click', () => {
+      const f = getActiveFile();
+      if (!f) return;
+      const blob = new Blob([f.originalBuffer], { type: 'application/vnd.ms-excel' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${f.baseName} (original).${f.ext}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+  </script>
+</body>
+</html>
