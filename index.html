@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>BLPHK Packing List Formatter &amp; Exporter (V17)</title>
+  <title>BLPHK Packing List Formatter &amp; Exporter (V18)</title>
 
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -78,12 +78,12 @@
       <div>
         <h1 class="text-base font-extrabold tracking-tight flex items-center gap-2">
           BLPHK Packing List Formatter
-          <span class="bg-blue-500/20 text-blue-300 text-[11px] font-bold px-2 py-0.5 rounded-full border border-blue-400/30 mono-font">Based on VBA v5.4</span>
+          <span class="bg-blue-500/20 text-blue-300 text-[11px] font-bold px-2 py-0.5 rounded-full border border-blue-400/30 mono-font">V18-EXACT-FORMAT</span>
         </h1>
         <div class="flex flex-wrap items-center gap-1.5 mt-0.5 text-[10px] text-slate-400 font-medium">
-          <span class="bg-slate-900 border border-slate-800 px-1.5 py-0.2 rounded text-slate-300">G.W. &amp; N.W. Headers Blank</span>
+          <span class="bg-slate-900 border border-slate-800 px-1.5 py-0.2 rounded text-slate-300">Exact Font, Size &amp; Alignment</span>
           <span>•</span>
-          <span class="bg-slate-900 border border-slate-800 px-1.5 py-0.2 rounded text-slate-300">Remarks Total GW + (Including Sample)</span>
+          <span class="bg-slate-900 border border-slate-800 px-1.5 py-0.2 rounded text-slate-300">G.W. &amp; N.W. Headers Blank</span>
         </div>
       </div>
     </div>
@@ -179,7 +179,7 @@
               Click to browse or drag &amp; drop Excel file(s) here (Multi-select supported)
             </div>
             <div class="text-[11px] text-slate-400">
-              Clears G.W. &amp; N.W. headers on every page • Appends Total GW + (Including Sample) in Remarks • One-click export of Excel + PDF
+              Restores original font sizes, column widths &amp; alignments • Clears G.W./N.W. headers • Appends Total GW + (Including Sample) in Remarks
             </div>
           </div>
         </div>
@@ -205,7 +205,7 @@
           <div id="emptyControlsPlaceholder" class="flex-1 flex flex-col items-center justify-center p-6 text-center text-slate-400">
             <i class="fa-solid fa-table-list text-3xl text-slate-300 mb-2"></i>
             <p class="text-xs font-bold text-slate-600">Awaiting Packing List Workbook</p>
-            <p class="text-[11px] mt-1 max-w-xs">Upload an Excel file like <span class="mono-font text-slate-500">LOT PL.xls</span> to auto-format and fine-tune before exporting Excel + PDF.</p>
+            <p class="text-[11px] mt-1 max-w-xs">Upload an Excel file like <span class="mono-font text-slate-500">Lot PL.xls</span> to auto-format and fine-tune before exporting Excel + PDF.</p>
           </div>
 
           <div id="controlsContent" class="hidden flex-1 overflow-y-auto p-3.5 space-y-3.5 select-text">
@@ -423,8 +423,34 @@
     const COL_BF = colToIndex('BF'); // 57
 
     // =========================================================================
-    // BIFF8 (.xls) BINARY STYLE & GEOMETRY EXTRACTOR
+    // ACCURATE BIFF8 (.xls) STYLE & COLUMN WIDTH EXTRACTOR
     // =========================================================================
+    function decodeBiffString(bytes, view, offset, maxEnd) {
+      if (offset >= maxEnd) return { text: '', nextOffset: offset };
+      const cch = view.getUint16(offset, true);
+      let pos = offset + 2;
+      if (pos >= maxEnd) return { text: '', nextOffset: maxEnd };
+      const flags = bytes[pos++];
+      const isCompressed = (flags & 0x01) === 0;
+      const hasAsianPhonetic = Boolean(flags & 0x04);
+      const hasRichText = Boolean(flags & 0x08);
+      const cRun = hasRichText && pos + 2 <= maxEnd ? (pos += 2, view.getUint16(pos - 2, true)) : 0;
+      const cbExtRst = hasAsianPhonetic && pos + 4 <= maxEnd ? (pos += 4, view.getUint32(pos - 4, true)) : 0;
+
+      let text = '';
+      if (isCompressed) {
+        const take = Math.min(cch, maxEnd - pos);
+        for (let i = 0; i < take; i++) text += String.fromCharCode(bytes[pos + i]);
+        pos += take;
+      } else {
+        const takeChars = Math.min(cch, Math.floor((maxEnd - pos) / 2));
+        for (let i = 0; i < takeChars; i++) text += String.fromCharCode(view.getUint16(pos + i * 2, true));
+        pos += takeChars * 2;
+      }
+      pos = Math.min(maxEnd, pos + cRun * 4 + cbExtRst);
+      return { text, nextOffset: pos };
+    }
+
     function extractBiff8Formatting(arrayBuffer) {
       const bytes = new Uint8Array(arrayBuffer);
       if (bytes.length < 512 || bytes[0] !== 0xD0 || bytes[1] !== 0xCF || bytes[2] !== 0x11 || bytes[3] !== 0xE0) {
@@ -588,8 +614,8 @@
           if (fonts.length === 4) fonts.push({ name: 'Arial', sz: 10, bold: false, italic: false });
           fonts.push({
             name: fontName,
-            sz: heightTwips / 20,
-            bold: weight >= 700,
+            sz: Math.round((heightTwips / 20) * 10) / 10,
+            bold: weight >= 600,
             italic: Boolean(grbit & 0x0002)
           });
         } else if (recId === 0x00E0 && recLen >= 20) {
@@ -626,7 +652,9 @@
           } else if (recId === 0x0208 && recLen >= 16) {
             const r = wbView.getUint16(dataPos, true);
             const miyRw = wbView.getUint16(dataPos + 6, true);
-            rowHeightsPt[r] = (miyRw & 0x7FFF) / 20;
+            if (!(miyRw & 0x8000)) {
+              rowHeightsPt[r] = miyRw / 20;
+            }
           } else if (
             (recId === 0x0201 || recId === 0x0203 || recId === 0x0204 || recId === 0x0205 || recId === 0x00FD || recId === 0x027E || recId === 0x0006) &&
             recLen >= 6
@@ -660,7 +688,7 @@
     }
 
     // =========================================================================
-    // FULL AUTOMATION ENGINE (Restores V13 Page Breaks + V15 BIFF8 Styles + New Logic)
+    // FULL AUTOMATION ENGINE (Exact Column Widths, Font Sizes, Alignment & Breaks)
     // =========================================================================
     function parseAndAutomateWorkbook(fileName, arrayBuffer) {
       const originalBuffer = arrayBuffer.slice(0);
@@ -693,15 +721,18 @@
             const xfIdx = biff8Info.cellXfMap.get(`${r},${c}`);
             const xf = xfIdx !== undefined ? biff8Info.xfs[xfIdx] : null;
             if (xf) {
-              const fnt = biff8Info.fonts[xf.fontIdx] || { name: 'Arial', sz: 8.5, bold: false, italic: false };
+              const fnt = biff8Info.fonts[xf.fontIdx] || { name: 'Arial', sz: 10, bold: false, italic: false };
               styleObj.font = {
                 name: fnt.name,
                 sz: fnt.sz,
                 bold: fnt.bold,
                 italic: fnt.italic
               };
+              const resolvedHAlign = xf.hAlign !== 'general'
+                ? xf.hAlign
+                : (rawCell?.t === 'n' ? 'right' : 'left');
               styleObj.alignment = {
-                horizontal: xf.hAlign !== 'general' ? xf.hAlign : (rawCell?.t === 'n' ? 'right' : 'left'),
+                horizontal: resolvedHAlign,
                 vertical: xf.vAlign || 'center',
                 wrapText: xf.wrapText
               };
@@ -724,16 +755,17 @@
         e: { r: m.e.r, c: m.e.c }
       }));
 
-      const colWidths = [];
+      // Store exact character width (wch) so exported .xlsx matches original column proportions
+      const colWidthsWch = [];
       const wsCols = ws['!cols'] || [];
       for (let c = 0; c <= maxCol; c++) {
         if (biff8Info && biff8Info.colWidthsChars[c] !== undefined) {
-          colWidths.push(Math.max(4, biff8Info.colWidthsChars[c] * 7.0));
+          colWidthsWch.push(Math.max(1.2, Math.round(biff8Info.colWidthsChars[c] * 100) / 100));
         } else {
           const colInfo = wsCols[c];
-          if (colInfo && colInfo.wpx) colWidths.push(colInfo.wpx);
-          else if (colInfo && colInfo.wch) colWidths.push(Math.max(6, colInfo.wch * 7.0));
-          else colWidths.push(14);
+          if (colInfo && colInfo.wch) colWidthsWch.push(Math.max(1.2, colInfo.wch));
+          else if (colInfo && colInfo.wpx) colWidthsWch.push(Math.max(1.2, colInfo.wpx / 7.5));
+          else colWidthsWch.push(10);
         }
       }
 
@@ -744,7 +776,7 @@
           baseRowHeights.push(biff8Info.rowHeightsPt[r]);
         } else {
           const rowInfo = wsRows[r];
-          baseRowHeights.push(rowInfo && rowInfo.hpt ? rowInfo.hpt : 13.5);
+          baseRowHeights.push(rowInfo && rowInfo.hpt ? rowInfo.hpt : 14);
         }
       }
 
@@ -843,17 +875,13 @@
         grid[remarksRow][COL_J].w = finalRemarksJ;
       }
 
-      // --- STEP 5: Exact V13 Strict Page Breaks before "BANDAI NAMCO TRADING" ---
+      // --- STEP 5: Strict Page Breaks before "BANDAI NAMCO TRADING" ---
       const pageBreaks = [];
       for (let r = 0; r <= maxRow; r++) {
         for (let cIdx = 0; cIdx < 26; cIdx++) {
           if (getCellText(r, cIdx).toUpperCase().includes('BANDAI NAMCO TRADING')) {
-            if (r > 4) {
-              // In 0-based rows, 1-based R56 is r=55 (Bandai Namco Trading is at R56 => r=55, blank row above is r=54)
-              // Keep exact r (e.g. r=55 => Row 56) so each page header stays clean
-              if (!pageBreaks.includes(r)) {
-                pageBreaks.push(r);
-              }
+            if (r > 4 && !pageBreaks.includes(r)) {
+              pageBreaks.push(r);
             }
             break;
           }
@@ -871,7 +899,7 @@
         maxCol,
         grid,
         merges,
-        colWidths,
+        colWidthsWch,
         baseRowHeights,
         rowHeights: [...baseRowHeights],
         foundSample,
@@ -914,7 +942,7 @@
         const isMainItem = (textB !== '' && textC !== '' && !textC.toUpperCase().includes('DESCRIPTION'));
         const isRem = (i === remarksRow || textJ.length > 30);
 
-        let h = Math.max(13, baseRowHeights[i] || 13.5);
+        let h = Math.max(12, baseRowHeights[i] || 14);
         if (isMainItem) h += padMain;
         else if (isRem) h += padRemarks;
 
@@ -1248,7 +1276,7 @@
     });
 
     // =========================================================================
-    // CLEAN PREVIEW RENDERER (Eliminates Stray Horizontal Band Artifacts)
+    // PREVIEW RENDERER (Shows Every Row Clearly Without Clipping Any Lines)
     // =========================================================================
     function buildMergeLookup(merges) {
       const masterMap = new Map();
@@ -1352,24 +1380,23 @@
         pageRanges.push({ start: startR, end: f.maxRow });
       }
 
-      const totalColWeight = f.colWidths.reduce((acc, w) => acc + w, 0) || 1;
+      const totalColWeight = f.colWidthsWch.reduce((acc, w) => acc + w, 0) || 1;
       const colGroupHtml = `<colgroup>${
         (appState.showRowGutter ? '<col style="width:24px;">' : '') +
-        f.colWidths.map(w => `<col style="width:${((w / totalColWeight) * 100).toFixed(3)}%;">`).join('')
+        f.colWidthsWch.map(w => `<col style="width:${((w / totalColWeight) * 100).toFixed(3)}%;">`).join('')
       }</colgroup>`;
 
       const pagesHtml = pageRanges.map((pr, pageIdx) => {
         const rowsHtml = [];
         for (let r = pr.start; r <= pr.end; r++) {
-          // Check if row has any non-empty cell or border; keep tiny blank separator rows compact
           let rowHasContent = false;
           for (let c = 0; c <= f.maxCol; c++) {
             const val = String(f.grid[r]?.[c]?.w || f.grid[r]?.[c]?.v || '').trim();
             if (val !== '') { rowHasContent = true; break; }
           }
           const hPt = rowHasContent
-            ? Math.max(12, f.rowHeights[r] || 13.5).toFixed(1)
-            : Math.min(8, Math.max(3, (f.baseRowHeights[r] || 6) * 0.5)).toFixed(1);
+            ? Math.max(12, f.rowHeights[r] || 14).toFixed(1)
+            : Math.min(8, Math.max(2.5, (f.baseRowHeights[r] || 6) * 0.5)).toFixed(1);
 
           const cellsHtml = [];
 
@@ -1541,12 +1568,12 @@
     });
 
     // =========================================================================
-    // EXPORT TO EXCEL (.xlsx WITH ROW BREAKS) & FULL-ROW-VISIBLE PDF
+    // EXPORT TO EXCEL (.xlsx WITH EXACT WIDTHS/STYLES) & FULL-ROW-VISIBLE PDF
     // =========================================================================
     function buildExportableXlsxWorkbook(fileObj) {
       const wb = XLSX.utils.book_new();
       const ws = {};
-      const { grid, maxRow, maxCol, merges, colWidths, rowHeights, pageBreaks } = fileObj;
+      const { grid, maxRow, maxCol, merges, colWidthsWch, rowHeights, pageBreaks } = fileObj;
 
       for (let r = 0; r <= maxRow; r++) {
         for (let c = 0; c <= maxCol; c++) {
@@ -1573,7 +1600,8 @@
         e: { r: m.e.r, c: m.e.c }
       }));
 
-      ws['!cols'] = colWidths.map(wpx => ({ wpx }));
+      // Use wch (character width) so Excel columns retain natural width instead of shrinking
+      ws['!cols'] = colWidthsWch.map(wch => ({ wch }));
       ws['!rows'] = rowHeights.map(hpt => ({ hpt }));
       ws['!rowBreaks'] = [...new Set(pageBreaks)].sort((a, b) => a - b);
       ws['!pageSetup'] = {
